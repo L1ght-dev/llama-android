@@ -5,8 +5,10 @@ package dev.ffmpegkit.llama
  *
  * @property contextSize context window in tokens.
  * @property threads CPU threads for inference.
- * @property gpuLayers layers to offload to the GPU. **0 = CPU only** (Free tier).
- *   Vulkan GPU offload (`gpuLayers > 0`) requires the **Pro** build.
+ * @property gpuLayers layers to offload to the GPU. **0 = strictly CPU only** — no GPU
+ *   device is attached to the model, so nothing in the inference path can reach one.
+ *   This build ships no GPU backend at all; Vulkan GPU offload (`gpuLayers > 0`)
+ *   requires the **Pro** build.
  * @property temperature sampling temperature; `<= 0` = greedy.
  * @property topP nucleus sampling.
  * @property topK top-k sampling.

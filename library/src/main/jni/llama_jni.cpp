@@ -119,11 +119,25 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeLoadModel(
         llama_backend_init();
         g_backend_ready = true;
     }
+    // The public API documents gpuLayers as 0 = CPU only, > 0 = layers on the GPU.
+    // Negative isn't part of that contract (llama.cpp reads -1 as "all layers"), so
+    // fold it into the CPU-only case rather than silently doing the opposite.
+    const int n_gpu_layers = nGpuLayers > 0 ? nGpuLayers : 0;
+
     auto *h = new LlamaCtx();
     h->n_threads = nThreads;
 
     llama_model_params mp = llama_model_default_params();
-    mp.n_gpu_layers = nGpuLayers;
+    mp.n_gpu_layers = n_gpu_layers;
+    // gpuLayers == 0 must mean CPU-only, and n_gpu_layers alone does not deliver that:
+    // it only decides where the *weights* live. With devices left NULL llama.cpp
+    // attaches every detected device to the model and the ggml scheduler then offloads
+    // large matmuls (batch >= 32, i.e. any real prompt) to the GPU. This build ships no
+    // GPU backend, so nothing is registered and the point is moot today — but the
+    // guarantee should not depend on that. An empty, NULL-terminated device list means
+    // "no device at all".
+    static ggml_backend_dev_t no_devices[1] = { nullptr };
+    if (n_gpu_layers == 0) mp.devices = no_devices;
     h->model = llama_model_load_from_file(jstr(env, path).c_str(), mp);
     if (!h->model) {
         LOGE("failed to load model");
@@ -135,6 +149,7 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeLoadModel(
     cp.n_ctx = (uint32_t) nCtx;
     cp.n_threads = nThreads;
     cp.n_threads_batch = nThreads;
+    cp.op_offload = n_gpu_layers > 0;   // belt and braces: no host-op offload on CPU-only
     h->ctx = llama_init_from_model(h->model, cp);
     if (!h->ctx) {
         LOGE("failed to create context");
