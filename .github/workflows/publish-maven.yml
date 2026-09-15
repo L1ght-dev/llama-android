@@ -30,6 +30,13 @@ jobs:
           java-version: "17"
 
       - uses: android-actions/setup-android@v3
+        with:
+          # Default is `packages: tools platform-tools`, and Google has since removed
+          # the obsolete `tools` package from the SDK repository — sdkmanager then
+          # fails with "Failed to find package 'tools'". We install what we need in
+          # the next step, so ask for nothing here.
+          packages: ''
+
 
       - name: Install NDK r27c + CMake + Ninja
         run: |
