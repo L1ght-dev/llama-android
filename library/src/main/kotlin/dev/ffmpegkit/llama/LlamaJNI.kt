@@ -25,6 +25,9 @@ internal object LlamaJNI {
 
     external fun nativeEmbed(handle: Long, text: String): FloatArray
 
+    // 🟢 دالة المعالجة المجمعة في C++
+    external fun nativeEmbedBatch(handle: Long, texts: Array<String>): FloatArray
+
     external fun nativeReleaseModel(handle: Long)
 
     external fun nativeGetSystemInfo(): String
