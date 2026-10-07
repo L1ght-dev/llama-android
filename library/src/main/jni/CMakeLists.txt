@@ -18,9 +18,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spirv_headers)
 
-# المسار الصحيح المباشر لملف التكوين
-set(SPIRV-Headers_DIR "${spirv_headers_BINARY_DIR}" CACHE PATH "" FORCE)
-list(APPEND CMAKE_PREFIX_PATH "${spirv_headers_BINARY_DIR}")
+# إنشاء ملف التكوين المطلوب برمجياً ليتعرف عليه find_package فوراً
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config/SPIRV-HeadersConfig.cmake"
+"set(SPIRV-Headers_FOUND TRUE)
+if(NOT TARGET SPIRV-Headers::SPIRV-Headers)
+    add_library(SPIRV-Headers::SPIRV-Headers INTERFACE IMPORTED)
+    set_target_properties(SPIRV-Headers::SPIRV-Headers PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES \"${spirv_headers_SOURCE_DIR}/include\"
+    )
+endif()
+")
+set(SPIRV-Headers_DIR "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config" CACHE PATH "" FORCE)
+list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config")
 
 # --- llama.cpp submodule at repo root --------------------------------------
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../llama.cpp)
