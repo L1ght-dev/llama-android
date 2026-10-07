@@ -13,11 +13,10 @@ add_link_options(
 # jni dir = library/src/main/jni  →  four levels up is the repo root.
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../llama.cpp)
 
-# Free build: CPU/NEON only. No Vulkan, no OpenMP (avoids libomp.so runtime dep),
-# no curl, no CLI tools/examples/server/tests. Shared libs → libllama.so + libggml.so.
+# Enable Vulkan GPU acceleration
 set(BUILD_SHARED_LIBS    ON  CACHE BOOL "" FORCE)
 set(GGML_OPENMP          OFF CACHE BOOL "" FORCE)
-set(GGML_VULKAN          OFF CACHE BOOL "" FORCE)   # Pro flips this ON
+set(GGML_VULKAN          ON  CACHE BOOL "" FORCE)   # 🟢 تم تفعيل كرت الشاشة هنا
 set(GGML_LLAMAFILE       OFF CACHE BOOL "" FORCE)
 set(LLAMA_CURL           OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
@@ -30,6 +29,7 @@ add_subdirectory(${LLAMA_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp)
 # --- JNI bridge → libllama_jni.so ------------------------------------------
 add_library(llama_jni SHARED llama_jni.cpp)
 find_library(log-lib log)
+find_library(vulkan-lib vulkan)
 
 target_include_directories(llama_jni PRIVATE
     ${LLAMA_DIR}/include
@@ -37,4 +37,5 @@ target_include_directories(llama_jni PRIVATE
 
 target_link_libraries(llama_jni
     llama
-    ${log-lib})
+    ${log-lib}
+    ${vulkan-lib})
