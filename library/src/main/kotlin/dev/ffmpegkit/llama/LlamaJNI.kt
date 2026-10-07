@@ -8,7 +8,8 @@ package dev.ffmpegkit.llama
 internal object LlamaJNI {
 
     init {
-        for (lib in listOf("ggml-base", "ggml-cpu", "ggml", "llama")) {
+        // 🟢 إضافة ggml-vulkan ليقوم أندرويد بتحميل كرت الشاشة في الذاكرة أولاً
+        for (lib in listOf("ggml-base", "ggml-vulkan", "ggml-cpu", "ggml", "llama")) {
             runCatching { System.loadLibrary(lib) }
         }
         System.loadLibrary("llama_jni")
@@ -25,7 +26,7 @@ internal object LlamaJNI {
 
     external fun nativeEmbed(handle: Long, text: String): FloatArray
 
-    // 🟢 دالة المعالجة المجمعة في C++
+    // دالة المعالجة المجمعة في C++
     external fun nativeEmbedBatch(handle: Long, texts: Array<String>): FloatArray
 
     external fun nativeReleaseModel(handle: Long)
