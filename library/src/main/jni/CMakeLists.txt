@@ -9,21 +9,34 @@ add_link_options(
     "-Wl,-z,max-page-size=16384"
     "-Wl,-z,common-page-size=16384")
 
+# --- Fetch SPIRV-Headers تلقائياً لتشغيل معالج الرسوميات Vulkan -------------
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH CACHE STRING "" FORCE)
+
+include(FetchContent)
+FetchContent_Declare(
+    spirv_headers
+    GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers.git
+    GIT_TAG        main
+)
+FetchContent_MakeAvailable(spirv_headers)
+
+set(SPIRV-Headers_DIR "${spirv_headers_BINARY_DIR}/cmake" CACHE PATH "" FORCE)
+list(APPEND CMAKE_PREFIX_PATH "${spirv_headers_BINARY_DIR}" "${spirv_headers_BINARY_DIR}/cmake")
+
 # --- llama.cpp submodule at repo root --------------------------------------
-# jni dir = library/src/main/jni  →  four levels up is the repo root.
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../llama.cpp)
 
 # Enable Vulkan GPU acceleration
 set(BUILD_SHARED_LIBS    ON  CACHE BOOL "" FORCE)
 set(GGML_OPENMP          OFF CACHE BOOL "" FORCE)
-set(GGML_VULKAN          ON  CACHE BOOL "" FORCE)   # 🟢 تم تفعيل كرت الشاشة هنا
+set(GGML_VULKAN          ON  CACHE BOOL "" FORCE)
 set(GGML_LLAMAFILE       OFF CACHE BOOL "" FORCE)
 set(LLAMA_CURL           OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER   OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS    OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_COMMON   OFF CACHE BOOL "" FORCE)   # JNI uses the core llama.h API only
+set(LLAMA_BUILD_COMMON   OFF CACHE BOOL "" FORCE)
 add_subdirectory(${LLAMA_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp)
 
 # --- JNI bridge → libllama_jni.so ------------------------------------------
