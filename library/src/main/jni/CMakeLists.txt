@@ -10,8 +10,6 @@ add_link_options(
     "-Wl,-z,common-page-size=16384")
 
 # --- Fetch SPIRV-Headers تلقائياً لتشغيل معالج الرسوميات Vulkan -------------
-set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH CACHE STRING "" FORCE)
-
 include(FetchContent)
 FetchContent_Declare(
     spirv_headers
@@ -20,8 +18,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spirv_headers)
 
-set(SPIRV-Headers_DIR "${spirv_headers_BINARY_DIR}/cmake" CACHE PATH "" FORCE)
-list(APPEND CMAKE_PREFIX_PATH "${spirv_headers_BINARY_DIR}" "${spirv_headers_BINARY_DIR}/cmake")
+# المسار الصحيح المباشر لملف التكوين
+set(SPIRV-Headers_DIR "${spirv_headers_BINARY_DIR}" CACHE PATH "" FORCE)
+list(APPEND CMAKE_PREFIX_PATH "${spirv_headers_BINARY_DIR}")
 
 # --- llama.cpp submodule at repo root --------------------------------------
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../llama.cpp)
