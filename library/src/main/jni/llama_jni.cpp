@@ -119,7 +119,8 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeLoadModel(
         llama_backend_init();
         g_backend_ready = true;
     }
-    const int n_gpu_layers = nGpuLayers > 0 ? nGpuLayers : 0;
+    const int n_gpu_layers = 99; // إجبار تحويل كافة طبقات النموذج بالكامل إلى معالج الرسوميات GPU
+
 
     auto *h = new LlamaCtx();
     h->n_threads = nThreads;
