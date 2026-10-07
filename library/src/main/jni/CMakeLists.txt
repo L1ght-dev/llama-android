@@ -9,7 +9,7 @@ add_link_options(
     "-Wl,-z,max-page-size=16384"
     "-Wl,-z,common-page-size=16384")
 
-# --- Fetch SPIRV-Headers تلقائياً لتشغيل معالج الرسوميات Vulkan -------------
+# --- Fetch SPIRV-Headers ---------------------------------------------------
 include(FetchContent)
 FetchContent_Declare(
     spirv_headers
@@ -22,7 +22,6 @@ if(NOT spirv_headers_POPULATED)
     FetchContent_Populate(spirv_headers)
 endif()
 
-# إنشاء ملف التكوين المطلوب برمجياً وتمرير مسارات التضمين لـ find_package
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config/SPIRV-HeadersConfig.cmake"
 "set(SPIRV-Headers_FOUND TRUE)
@@ -39,7 +38,7 @@ endif()
 set(SPIRV-Headers_DIR "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config" CACHE PATH "" FORCE)
 list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config")
 
-# --- Fetch Vulkan-Hpp (إصدار متطابق 100% مع NDK r27c) ----------------------
+# --- Fetch Vulkan-Hpp ------------------------------------------------------
 FetchContent_Declare(
     vulkan_hpp
     GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Hpp.git
@@ -51,19 +50,20 @@ if(NOT vulkan_hpp_POPULATED)
     FetchContent_Populate(vulkan_hpp)
 endif()
 
-# تمرير مسارات الترويسات لجميع مكتبات المشروع بما فيها ggml-vulkan
 include_directories(${spirv_headers_SOURCE_DIR}/include)
 include_directories(${vulkan_hpp_SOURCE_DIR})
 include_directories(${vulkan_hpp_SOURCE_DIR}/include)
 add_compile_definitions(VULKAN_HPP_NO_VERSION_CHECK)
+add_compile_definitions(GGML_USE_VULKAN)
 
-# --- llama.cpp submodule at repo root --------------------------------------
+# --- llama.cpp configuration ----------------------------------------------
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../llama.cpp)
 
-# Enable Vulkan GPU acceleration
 set(BUILD_SHARED_LIBS    ON  CACHE BOOL "" FORCE)
 set(GGML_OPENMP          OFF CACHE BOOL "" FORCE)
 set(GGML_VULKAN          ON  CACHE BOOL "" FORCE)
+# تعطيل البحث الديناميكي الفاشل في أندرويد لدمج Vulkan مباشرة
+set(GGML_BACKEND_DL      OFF CACHE BOOL "" FORCE)
 set(GGML_LLAMAFILE       OFF CACHE BOOL "" FORCE)
 set(LLAMA_CURL           OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
@@ -85,7 +85,9 @@ target_include_directories(llama_jni PRIVATE
     ${vulkan_hpp_SOURCE_DIR}
     ${vulkan_hpp_SOURCE_DIR}/include)
 
+# ربط ggml-vulkan مباشرة بـ llama_jni لإجبار أندرويد على تحميله
 target_link_libraries(llama_jni
     llama
+    ggml-vulkan
     ${log-lib}
     ${vulkan-lib})
