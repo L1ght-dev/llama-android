@@ -1,14 +1,6 @@
 // JNI bridge between the Kotlin API (dev.ffmpegkit.llama.LlamaJNI) and llama.cpp.
 // Uses the core llama.h API only (no examples "common" lib). Produces
 // libllama_jni.so; Kotlin loads ggml, llama, then llama_jni.
-//
-// Native entry points (must match LlamaJNI.kt):
-//   nativeLoadModel(path, nCtx, nThreads, nGpuLayers)                 -> jlong handle
-//   nativeComplete(handle, prompt, system, maxTokens, temp, topP, topK, seed) -> jstring (JSON)
-//   nativeEmbed(handle, text)                                         -> jfloatArray
-//   nativeEmbedBatch(handle, texts)                                    -> jfloatArray (flat array)
-//   nativeReleaseModel(handle)                                        -> void
-//   nativeGetSystemInfo()                                             -> jstring
 
 #include <jni.h>
 #include <android/log.h>
@@ -19,7 +11,13 @@
 #include "llama.h"
 
 #define LOG_TAG "llama-jni"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+// إعلان خارجي لتسجيل معالج الرسوميات Vulkan يدوياً دون الحاجة لملفات الترويسة
+extern "C" {
+    ggml_backend_reg_t ggml_backend_vk_reg(void);
+}
 
 namespace {
 
@@ -30,6 +28,14 @@ struct LlamaCtx {
 };
 
 bool g_backend_ready = false;
+
+// توجيه كافة سجلات C++ و Vulkan إلى Logcat الأندرويد مباشرة
+void llama_log_callback(ggml_log_level level, const char * text, void * /*user_data*/) {
+    int priority = ANDROID_LOG_INFO;
+    if (level == GGML_LOG_LEVEL_ERROR) priority = ANDROID_LOG_ERROR;
+    else if (level == GGML_LOG_LEVEL_WARN) priority = ANDROID_LOG_WARN;
+    __android_log_print(priority, "llama-native", "%s", text);
+}
 
 std::string jstr(JNIEnv *env, jstring s) {
     if (!s) return {};
@@ -116,19 +122,32 @@ JNIEXPORT jlong JNICALL
 Java_dev_ffmpegkit_llama_LlamaJNI_nativeLoadModel(
         JNIEnv *env, jobject, jstring path, jint nCtx, jint nThreads, jint nGpuLayers) {
     if (!g_backend_ready) {
+        // 1. تفعيل طباعة السجلات إلى Logcat
+        llama_log_set(llama_log_callback, nullptr);
+        
+        // 2. تهيئة محرك llama
         llama_backend_init();
+        
+        // 3. تسجيل كرت الشاشة Vulkan يدوياً وإجباره على الدخول في قائمة العتاد
+        #if defined(GGML_USE_VULKAN) || defined(GGML_VULKAN)
+        ggml_backend_reg_t vk_reg = ggml_backend_vk_reg();
+        if (vk_reg) {
+            ggml_backend_register(vk_reg);
+            LOGI("Vulkan backend explicitly registered successfully!");
+        }
+        #endif
+        
         g_backend_ready = true;
     }
-    const int n_gpu_layers = 99; // إجبار تحويل كافة طبقات النموذج بالكامل إلى معالج الرسوميات GPU
 
+    const int n_gpu_layers = (nGpuLayers > 0) ? nGpuLayers : 99;
 
     auto *h = new LlamaCtx();
     h->n_threads = nThreads;
 
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = n_gpu_layers;
-    static ggml_backend_dev_t no_devices[1] = { nullptr };
-    if (n_gpu_layers == 0) mp.devices = no_devices;
+    
     h->model = llama_model_load_from_file(jstr(env, path).c_str(), mp);
     if (!h->model) {
         LOGE("failed to load model");
@@ -140,7 +159,7 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeLoadModel(
     cp.n_ctx = (uint32_t) nCtx;
     cp.n_threads = nThreads;
     cp.n_threads_batch = nThreads;
-    cp.op_offload = n_gpu_layers > 0;
+    cp.op_offload = (n_gpu_layers > 0);
     h->ctx = llama_init_from_model(h->model, cp);
     if (!h->ctx) {
         LOGE("failed to create context");
@@ -233,7 +252,7 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeEmbed(
     return arr;
 }
 
-// 🟢 دالة الدُفعات المجمعة فائقة السرعة
+// دالة الدُفعات المجمعة
 JNIEXPORT jfloatArray JNICALL
 Java_dev_ffmpegkit_llama_LlamaJNI_nativeEmbedBatch(
         JNIEnv *env, jobject, jlong handle, jobjectArray textArray) {
@@ -282,7 +301,7 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeEmbedBatch(
             continue;
         }
 
-        // تطبيع L2 فوري في C++ لتسريع البحث
+        // تطبيع L2 فوري في C++
         float sum_sq = 0.0f;
         for (int i = 0; i < n_embd; ++i) {
             sum_sq += emb[i] * emb[i];
