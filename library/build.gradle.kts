@@ -10,7 +10,7 @@ android {
     ndkVersion = "27.2.12479018" // NDK r27c
 
     defaultConfig {
-        minSdk = 24
+        minSdk = 28
         consumerProguardFiles("proguard-rules.pro")
 
         ndk { abiFilters += "arm64-v8a" }   // Free = arm64-v8a only
