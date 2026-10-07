@@ -20,7 +20,7 @@ android {
                 arguments += listOf(
                     "-DANDROID_STL=c++_shared",
                     "-DGGML_OPENMP=OFF",   // no libomp.so runtime dependency
-                    "-DGGML_VULKAN=OFF",   // Free = CPU/NEON only (Pro enables Vulkan)
+                    "-DGGML_VULKAN=ON",
                     "-DGGML_LLAMAFILE=OFF",
                     "-DLLAMA_CURL=OFF",    // no libcurl dependency
                 )
