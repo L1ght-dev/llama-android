@@ -15,7 +15,7 @@ android {
 
         ndk { abiFilters += "arm64-v8a" }   // Free = arm64-v8a only
 
-        externalNativeBuild {
+                externalNativeBuild {
             cmake {
                 arguments += listOf(
                     "-DANDROID_STL=c++_shared",
@@ -23,7 +23,9 @@ android {
                     "-DGGML_VULKAN=ON",
                     "-DGGML_LLAMAFILE=OFF",
                     "-DLLAMA_CURL=OFF",    // no libcurl dependency
+                    "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH", // 🟢 يسمح بالبحث عن حزم Vulkan
                 )
+
                 cppFlags += "-O3"
                 // Build only our JNI lib (+ its deps libllama/libggml). Skips
                 // llama.cpp's many CLI tools/examples, which we don't ship.
