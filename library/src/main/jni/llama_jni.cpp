@@ -6,6 +6,7 @@
 //   nativeLoadModel(path, nCtx, nThreads, nGpuLayers)                 -> jlong handle
 //   nativeComplete(handle, prompt, system, maxTokens, temp, topP, topK, seed) -> jstring (JSON)
 //   nativeEmbed(handle, text)                                         -> jfloatArray
+//   nativeEmbedBatch(handle, texts)                                    -> jfloatArray (flat array)
 //   nativeReleaseModel(handle)                                        -> void
 //   nativeGetSystemInfo()                                             -> jstring
 
@@ -13,6 +14,7 @@
 #include <android/log.h>
 #include <string>
 #include <vector>
+#include <cmath>
 
 #include "llama.h"
 
@@ -71,8 +73,6 @@ std::string token_to_piece(const llama_vocab *vocab, llama_token token) {
     return std::string(buf, n);
 }
 
-// Format the (system,user) turn with the model's built-in chat template, falling
-// back to a plain concatenation if the model has none.
 std::string build_prompt(const llama_model *model, const std::string &system,
                          const std::string &user) {
     const char *tmpl = llama_model_chat_template(model, nullptr);
@@ -119,9 +119,6 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeLoadModel(
         llama_backend_init();
         g_backend_ready = true;
     }
-    // The public API documents gpuLayers as 0 = CPU only, > 0 = layers on the GPU.
-    // Negative isn't part of that contract (llama.cpp reads -1 as "all layers"), so
-    // fold it into the CPU-only case rather than silently doing the opposite.
     const int n_gpu_layers = nGpuLayers > 0 ? nGpuLayers : 0;
 
     auto *h = new LlamaCtx();
@@ -129,13 +126,6 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeLoadModel(
 
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = n_gpu_layers;
-    // gpuLayers == 0 must mean CPU-only, and n_gpu_layers alone does not deliver that:
-    // it only decides where the *weights* live. With devices left NULL llama.cpp
-    // attaches every detected device to the model and the ggml scheduler then offloads
-    // large matmuls (batch >= 32, i.e. any real prompt) to the GPU. This build ships no
-    // GPU backend, so nothing is registered and the point is moot today — but the
-    // guarantee should not depend on that. An empty, NULL-terminated device list means
-    // "no device at all".
     static ggml_backend_dev_t no_devices[1] = { nullptr };
     if (n_gpu_layers == 0) mp.devices = no_devices;
     h->model = llama_model_load_from_file(jstr(env, path).c_str(), mp);
@@ -149,7 +139,7 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeLoadModel(
     cp.n_ctx = (uint32_t) nCtx;
     cp.n_threads = nThreads;
     cp.n_threads_batch = nThreads;
-    cp.op_offload = n_gpu_layers > 0;   // belt and braces: no host-op offload on CPU-only
+    cp.op_offload = n_gpu_layers > 0;
     h->ctx = llama_init_from_model(h->model, cp);
     if (!h->ctx) {
         LOGE("failed to create context");
@@ -170,8 +160,6 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeComplete(
     const llama_vocab *vocab = llama_model_get_vocab(h->model);
     const std::string text = build_prompt(h->model, jstr(env, system), jstr(env, prompt));
 
-    // Each complete() is a fresh single turn: reset the KV cache so successive calls
-    // on the same model don't bleed context into one another.
     llama_memory_clear(llama_get_memory(h->ctx), true);
 
     std::vector<llama_token> tokens = tokenize(vocab, text, true);
@@ -224,8 +212,6 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeEmbed(
     std::vector<llama_token> tokens = tokenize(vocab, jstr(env, text), true);
     const int n_tok = (int) tokens.size();
 
-    // Embeddings must be explicitly enabled or llama_get_embeddings_* returns null.
-    // Toggle it on for this call and restore generation mode afterwards.
     llama_set_embeddings(h->ctx, true);
     llama_memory_clear(llama_get_memory(h->ctx), true);
     llama_batch batch = llama_batch_get_one(tokens.data(), (int32_t) n_tok);
@@ -235,8 +221,6 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeEmbed(
     }
 
     const int n_embd = llama_model_n_embd(h->model);
-    // Pooled sequence embedding (embedding models); fall back to the last token's
-    // hidden state (plain LLMs with no pooling configured).
     const float *emb = llama_get_embeddings_seq(h->ctx, 0);
     if (!emb) emb = llama_get_embeddings_ith(h->ctx, n_tok - 1);
     if (!emb) emb = llama_get_embeddings(h->ctx);
@@ -245,6 +229,72 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeEmbed(
 
     jfloatArray arr = env->NewFloatArray(n_embd);
     env->SetFloatArrayRegion(arr, 0, n_embd, emb);
+    return arr;
+}
+
+// 🟢 دالة الدُفعات المجمعة فائقة السرعة
+JNIEXPORT jfloatArray JNICALL
+Java_dev_ffmpegkit_llama_LlamaJNI_nativeEmbedBatch(
+        JNIEnv *env, jobject, jlong handle, jobjectArray textArray) {
+    auto *h = reinterpret_cast<LlamaCtx *>(handle);
+    if (!h || !h->ctx) return env->NewFloatArray(0);
+
+    const int n_chunks = env->GetArrayLength(textArray);
+    if (n_chunks == 0) return env->NewFloatArray(0);
+
+    const llama_vocab *vocab = llama_model_get_vocab(h->model);
+    const int n_embd = llama_model_n_embd(h->model);
+
+    std::vector<float> all_embeddings;
+    all_embeddings.reserve(n_chunks * n_embd);
+
+    for (int c = 0; c < n_chunks; ++c) {
+        auto *jtext = (jstring) env->GetObjectArrayElement(textArray, c);
+        std::string text = jstr(env, jtext);
+        env->DeleteLocalRef(jtext);
+
+        std::vector<llama_token> tokens = tokenize(vocab, text, true);
+        const int n_tok = (int) tokens.size();
+
+        if (tokens.empty()) {
+            all_embeddings.insert(all_embeddings.end(), n_embd, 0.0f);
+            continue;
+        }
+
+        llama_set_embeddings(h->ctx, true);
+        llama_memory_clear(llama_get_memory(h->ctx), true);
+
+        llama_batch batch = llama_batch_get_one(tokens.data(), (int32_t) n_tok);
+        if (llama_decode(h->ctx, batch) != 0) {
+            llama_set_embeddings(h->ctx, false);
+            all_embeddings.insert(all_embeddings.end(), n_embd, 0.0f);
+            continue;
+        }
+
+        const float *emb = llama_get_embeddings_seq(h->ctx, 0);
+        if (!emb) emb = llama_get_embeddings_ith(h->ctx, n_tok - 1);
+        if (!emb) emb = llama_get_embeddings(h->ctx);
+        llama_set_embeddings(h->ctx, false);
+
+        if (!emb) {
+            all_embeddings.insert(all_embeddings.end(), n_embd, 0.0f);
+            continue;
+        }
+
+        // تطبيع L2 فوري في C++ لتسريع البحث
+        float sum_sq = 0.0f;
+        for (int i = 0; i < n_embd; ++i) {
+            sum_sq += emb[i] * emb[i];
+        }
+        float norm = (sum_sq > 0.0f) ? (1.0f / std::sqrt(sum_sq)) : 0.0f;
+
+        for (int i = 0; i < n_embd; ++i) {
+            all_embeddings.push_back(emb[i] * norm);
+        }
+    }
+
+    jfloatArray arr = env->NewFloatArray((jsize) all_embeddings.size());
+    env->SetFloatArrayRegion(arr, 0, (jsize) all_embeddings.size(), all_embeddings.data());
     return arr;
 }
 
