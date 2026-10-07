@@ -15,13 +15,20 @@ FetchContent_Declare(
     spirv_headers
     GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers.git
     GIT_TAG        main
+    GIT_SHALLOW    TRUE
 )
-FetchContent_MakeAvailable(spirv_headers)
+FetchContent_GetProperties(spirv_headers)
+if(NOT spirv_headers_POPULATED)
+    FetchContent_Populate(spirv_headers)
+endif()
 
-# إنشاء ملف التكوين المطلوب برمجياً ليتعرف عليه find_package فوراً
+# إنشاء ملف التكوين المطلوب برمجياً وتمرير مسارات التضمين لـ find_package
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config/SPIRV-HeadersConfig.cmake"
 "set(SPIRV-Headers_FOUND TRUE)
+set(SPIRV_HEADERS_FOUND TRUE)
+set(SPIRV-Headers_INCLUDE_DIRS \"${spirv_headers_SOURCE_DIR}/include\")
+set(SPIRV_HEADERS_INCLUDE_DIRS \"${spirv_headers_SOURCE_DIR}/include\")
 if(NOT TARGET SPIRV-Headers::SPIRV-Headers)
     add_library(SPIRV-Headers::SPIRV-Headers INTERFACE IMPORTED)
     set_target_properties(SPIRV-Headers::SPIRV-Headers PROPERTIES
@@ -44,13 +51,13 @@ if(NOT vulkan_hpp_POPULATED)
     FetchContent_Populate(vulkan_hpp)
 endif()
 
-# تمرير مسارات الترويسات وتعطيل فحص الإصدار لتوافق NDK
+# تمرير مسارات الترويسات لجميع مكتبات المشروع بما فيها ggml-vulkan
+include_directories(${spirv_headers_SOURCE_DIR}/include)
 include_directories(${vulkan_hpp_SOURCE_DIR})
 include_directories(${vulkan_hpp_SOURCE_DIR}/include)
 add_compile_definitions(VULKAN_HPP_NO_VERSION_CHECK)
 
 # --- llama.cpp submodule at repo root --------------------------------------
-# jni dir = library/src/main/jni  →  four levels up is the repo root.
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../llama.cpp)
 
 # Enable Vulkan GPU acceleration
@@ -63,7 +70,7 @@ set(LLAMA_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER   OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS    OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_COMMON   OFF CACHE BOOL "" FORCE)   # JNI uses the core llama.h API only
+set(LLAMA_BUILD_COMMON   OFF CACHE BOOL "" FORCE)
 add_subdirectory(${LLAMA_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp)
 
 # --- JNI bridge → libllama_jni.so ------------------------------------------
@@ -74,6 +81,7 @@ find_library(vulkan-lib vulkan)
 target_include_directories(llama_jni PRIVATE
     ${LLAMA_DIR}/include
     ${LLAMA_DIR}/ggml/include
+    ${spirv_headers_SOURCE_DIR}/include
     ${vulkan_hpp_SOURCE_DIR}
     ${vulkan_hpp_SOURCE_DIR}/include)
 
