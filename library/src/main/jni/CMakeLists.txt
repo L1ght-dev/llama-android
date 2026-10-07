@@ -32,11 +32,11 @@ endif()
 set(SPIRV-Headers_DIR "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config" CACHE PATH "" FORCE)
 list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config")
 
-# --- Fetch Vulkan-Hpp (C++ bindings for Vulkan) ---------------------------
+# --- Fetch Vulkan-Hpp (إصدار متطابق 100% مع NDK r27c) ----------------------
 FetchContent_Declare(
     vulkan_hpp
     GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Hpp.git
-    GIT_TAG        main
+    GIT_TAG        v1.3.275
     GIT_SHALLOW    TRUE
 )
 FetchContent_GetProperties(vulkan_hpp)
