@@ -55,6 +55,21 @@ object Llama {
             LlamaJNI.nativeEmbed(model.requireHandle(), text)
         }
 
+    /** 🟢 Embed multiple `texts` in a single native pass. Returns a list of vectors. */
+    suspend fun embedBatch(model: LlamaModel, texts: List<String>): List<FloatArray> =
+        withContext(Dispatchers.Default) {
+            if (texts.isEmpty()) return@withContext emptyList()
+            val flat = LlamaJNI.nativeEmbedBatch(model.requireHandle(), texts.toTypedArray())
+            if (flat.isEmpty()) return@withContext emptyList()
+
+            val dim = flat.size / texts.size
+            if (dim == 0) return@withContext emptyList()
+
+            List(texts.size) { i ->
+                flat.copyOfRange(i * dim, (i + 1) * dim)
+            }
+        }
+
     /** Free the model's native memory. Safe to call more than once. */
     fun releaseModel(model: LlamaModel) {
         val h = model.handle
