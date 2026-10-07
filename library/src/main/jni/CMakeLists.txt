@@ -32,7 +32,25 @@ endif()
 set(SPIRV-Headers_DIR "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config" CACHE PATH "" FORCE)
 list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_BINARY_DIR}/spirv_headers_config")
 
+# --- Fetch Vulkan-Hpp (C++ bindings for Vulkan) ---------------------------
+FetchContent_Declare(
+    vulkan_hpp
+    GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Hpp.git
+    GIT_TAG        main
+    GIT_SHALLOW    TRUE
+)
+FetchContent_GetProperties(vulkan_hpp)
+if(NOT vulkan_hpp_POPULATED)
+    FetchContent_Populate(vulkan_hpp)
+endif()
+
+# تمرير مسارات الترويسات وتعطيل فحص الإصدار لتوافق NDK
+include_directories(${vulkan_hpp_SOURCE_DIR})
+include_directories(${vulkan_hpp_SOURCE_DIR}/include)
+add_compile_definitions(VULKAN_HPP_NO_VERSION_CHECK)
+
 # --- llama.cpp submodule at repo root --------------------------------------
+# jni dir = library/src/main/jni  →  four levels up is the repo root.
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../llama.cpp)
 
 # Enable Vulkan GPU acceleration
@@ -45,7 +63,7 @@ set(LLAMA_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER   OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS    OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_COMMON   OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_COMMON   OFF CACHE BOOL "" FORCE)   # JNI uses the core llama.h API only
 add_subdirectory(${LLAMA_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp)
 
 # --- JNI bridge → libllama_jni.so ------------------------------------------
@@ -55,7 +73,9 @@ find_library(vulkan-lib vulkan)
 
 target_include_directories(llama_jni PRIVATE
     ${LLAMA_DIR}/include
-    ${LLAMA_DIR}/ggml/include)
+    ${LLAMA_DIR}/ggml/include
+    ${vulkan_hpp_SOURCE_DIR}
+    ${vulkan_hpp_SOURCE_DIR}/include)
 
 target_link_libraries(llama_jni
     llama
