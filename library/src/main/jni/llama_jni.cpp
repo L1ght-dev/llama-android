@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <dlfcn.h>
 
 #include "llama.h"
 #include "ggml-backend.h"
@@ -14,11 +15,6 @@
 #define LOG_TAG "llama-jni"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-
-// إعلان خارجي لتسجيل معالج الرسوميات Vulkan يدوياً
-extern "C" {
-    ggml_backend_reg_t ggml_backend_vk_reg(void);
-}
 
 namespace {
 
@@ -127,14 +123,23 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeLoadModel(
         llama_log_set(llama_log_callback, nullptr);
         ggml_log_set(llama_log_callback, nullptr);
 
-        // 2. تسجيل كرت الشاشة يدوياً لضمان دخوله في السجل
-        #if defined(GGML_USE_VULKAN) || defined(GGML_VULKAN)
-        ggml_backend_reg_t vk_reg = ggml_backend_vk_reg();
-        if (vk_reg) {
-            ggml_backend_register(vk_reg);
-            LOGI("ggml_backend_vk_reg registered successfully!");
+        // 2. تسجيل كرت الشاشة Vulkan ديناميكياً من الذاكرة الحية مباشرة
+        void *vk_handle = dlopen("libggml-vulkan.so", RTLD_NOW | RTLD_GLOBAL);
+        if (vk_handle) {
+            typedef ggml_backend_reg_t (*vk_reg_fn_t)(void);
+            auto vk_reg_fn = (vk_reg_fn_t) dlsym(vk_handle, "ggml_backend_vk_reg");
+            if (vk_reg_fn) {
+                ggml_backend_reg_t reg = vk_reg_fn();
+                if (reg) {
+                    ggml_backend_register(reg);
+                    LOGI("Vulkan backend registered dynamically via dlsym!");
+                }
+            } else {
+                LOGE("Failed to find ggml_backend_vk_reg in libggml-vulkan.so");
+            }
+        } else {
+            LOGE("Failed to dlopen libggml-vulkan.so: %s", dlerror());
         }
-        #endif
 
         // 3. تهيئة المحرك وتحميل كافة الأجهزة المسجلة
         llama_backend_init();
