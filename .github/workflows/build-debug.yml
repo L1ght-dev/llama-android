@@ -30,11 +30,10 @@ jobs:
           # the next step, so ask for nothing here.
           packages: ''
 
-
-      - name: Install NDK r27c + CMake + Ninja
+      - name: Install NDK r27c + CMake + Ninja + glslc (Vulkan)
         run: |
           sdkmanager "ndk;27.2.12479018" "cmake;3.22.1"
-          sudo apt-get update && sudo apt-get install -y ninja-build
+          sudo apt-get update && sudo apt-get install -y ninja-build glslc
 
       - name: Assemble library + sample (debug)
         run: |
