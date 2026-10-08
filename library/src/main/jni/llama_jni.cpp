@@ -9,12 +9,13 @@
 #include <cmath>
 
 #include "llama.h"
+#include "ggml-backend.h"
 
 #define LOG_TAG "llama-jni"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// إعلان خارجي لتسجيل معالج الرسوميات Vulkan يدوياً دون الحاجة لملفات الترويسة
+// إعلان خارجي لتسجيل معالج الرسوميات Vulkan يدوياً
 extern "C" {
     ggml_backend_reg_t ggml_backend_vk_reg(void);
 }
@@ -29,7 +30,7 @@ struct LlamaCtx {
 
 bool g_backend_ready = false;
 
-// توجيه كافة سجلات C++ و Vulkan إلى Logcat الأندرويد مباشرة
+// توجيه كافة سجلات C++ و GGML و Vulkan إلى Logcat الأندرويد مباشرة
 void llama_log_callback(ggml_log_level level, const char * text, void * /*user_data*/) {
     int priority = ANDROID_LOG_INFO;
     if (level == GGML_LOG_LEVEL_ERROR) priority = ANDROID_LOG_ERROR;
@@ -122,21 +123,35 @@ JNIEXPORT jlong JNICALL
 Java_dev_ffmpegkit_llama_LlamaJNI_nativeLoadModel(
         JNIEnv *env, jobject, jstring path, jint nCtx, jint nThreads, jint nGpuLayers) {
     if (!g_backend_ready) {
-        // 1. تفعيل طباعة السجلات إلى Logcat
+        // 1. تفعيل السجلات للطبقتين (llama و ggml) لتصل رسائل Vulkan إلى Logcat
         llama_log_set(llama_log_callback, nullptr);
-        
-        // 2. تهيئة محرك llama
-        llama_backend_init();
-        
-        // 3. تسجيل كرت الشاشة Vulkan يدوياً وإجباره على الدخول في قائمة العتاد
+        ggml_log_set(llama_log_callback, nullptr);
+
+        // 2. تسجيل كرت الشاشة يدوياً لضمان دخوله في السجل
         #if defined(GGML_USE_VULKAN) || defined(GGML_VULKAN)
         ggml_backend_reg_t vk_reg = ggml_backend_vk_reg();
         if (vk_reg) {
             ggml_backend_register(vk_reg);
-            LOGI("Vulkan backend explicitly registered successfully!");
+            LOGI("ggml_backend_vk_reg registered successfully!");
         }
         #endif
-        
+
+        // 3. تهيئة المحرك وتحميل كافة الأجهزة المسجلة
+        llama_backend_init();
+        ggml_backend_load_all();
+
+        // 4. حصر وفحص كافة الأجهزة المتاحة وطباعة تقريرها
+        size_t dev_count = ggml_backend_dev_count();
+        LOGI("================ DEVICE DIAGNOSTICS ================");
+        LOGI("Total detected backend devices: %zu", dev_count);
+        for (size_t i = 0; i < dev_count; ++i) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            const char *name = ggml_backend_dev_name(dev);
+            const char *desc = ggml_backend_dev_description(dev);
+            LOGI("Device [%zu]: Name = %s | Desc = %s", i, name ? name : "null", desc ? desc : "null");
+        }
+        LOGI("====================================================");
+
         g_backend_ready = true;
     }
 
@@ -147,7 +162,7 @@ Java_dev_ffmpegkit_llama_LlamaJNI_nativeLoadModel(
 
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = n_gpu_layers;
-    
+
     h->model = llama_model_load_from_file(jstr(env, path).c_str(), mp);
     if (!h->model) {
         LOGE("failed to load model");
